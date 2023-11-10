@@ -30,31 +30,37 @@ def run():
     net = Mininet(topo=topo, controller=Controller, switch=OVSSwitch)
     h1, h2, h3, h4, s1, s2 = net.get('h1', 'h2','h3', 'h4', 's1', 's2')
 
-
     net.start()
-    # Set the congestion control scheme to Vegas
-    for h in [h1, h2, h3, h4]:
-        h.cmd('sysctl -w net.ipv4.tcp_congestion_control=vegas')
 
-    # Start iperf server on H4
-    h4.cmd('iperf -s &')
+    # Start tcpdump on s1-eth1
+    s1.cmd('tcpdump -i s1-eth1 -w output.pcap &')
 
-    # Measure the throughput from H1 to H4
-    print('Iperf throughput:')
-    iperf_output = h1.cmd('iperf -c %s -t 10' % h4.IP())
-    print(iperf_output)
+    # List of congestion control schemes to test
+    schemes = ['reno', 'cubic', 'bbr', 'vegas']
 
+    for scheme in schemes:
+        # Set the congestion control scheme
+        for h in [h1, h2, h3, h4]:
+            h.cmd('sysctl -w net.ipv4.tcp_congestion_control=%s' % scheme)
 
-    s1.cmd('tcpdump -i s1-eth1 -w r1.pcap &')  # replace 's1-eth1' with the name of the interface you want to capture on
-    # Assign IP addresses
-    for i in range(1, 5):
-        net.get('h{}'.format(i)).setIP('192.168.{}.{}'.format((i-1)//2+1, 100+(i-1)%2), intf='h{}-eth0'.format(i))
+        # Start TCP server on H4
+        h4.cmd('iperf -s &')
 
-    h4.cmd('python -m SimpleHTTPServer 80 &')
+        # Measure the throughput and network latency from H1, H2, and H3 to H4
+        for h in [h1, h2, h3]:
+            print('Iperf throughput from %s to H4 with %s:' % (h.name, scheme))
+            iperf_output = h.cmd('iperf -c %s -t 10' % h4.IP())
+            print(iperf_output)
 
-    h1.cmd('nc -1 1234 &')
-    h2.cmd('nc -1 1234 &')
-    h3.cmd('nc -1 1234 &')
+            print('Ping latency from %s to H4 with %s:' % (h.name, scheme))
+            ping_output = h.cmd('ping -c 4 %s' % h4.IP())
+            print(ping_output)
+
+        # Close TCP server on H4
+        h4.cmd('pkill iperf')
+
+    # Stop tcpdump on s1-eth1
+    s1.cmd('pkill tcpdump')
 
     net.pingAll()
 
