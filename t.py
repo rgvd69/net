@@ -5,6 +5,8 @@ from mininet.node import Controller, OVSSwitch
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
 
+import threading
+
 class CustomTopo(Topo):
     "Custom topology with 3 routers (switch+host) and 6 hosts."
 
@@ -37,44 +39,27 @@ def run():
 
     # List of congestion control schemes to test
     schemes = ['reno', 'cubic', 'bbr', 'vegas']
-
-    # Dictionary to store throughput results
-    results = {}
+    h4.cmd('iperf -s &')
 
     for scheme in schemes:
-        # Set the congestion control scheme
-        for h in [h1, h2, h3, h4]:
-            h.cmd('sysctl -w net.ipv4.tcp_congestion_control=%s' % scheme)
-
-        # Start TCP server on H4
-        h4.cmd('iperf -s &')
-
-        # Measure the throughput and network latency from H1, H2, and H3 to H4
+        print('Testing scheme %s' % scheme)
+        # Run the hosts sequentially
+        print('Running hosts sequentially')
         for h in [h1, h2, h3]:
-            print('Iperf throughput from %s to H4 with %s:' % (h.name, scheme))
-            iperf_output = h.cmd('iperf -c %s -t 10' % h4.IP())
-            print(iperf_output)
+            measure_throughput_and_latency(h, h4, scheme)
 
-            # Store throughput result
-            results[(h.name, scheme)] = iperf_output.split()[7]  # assuming the throughput is the 8th word in the output
+        # Run the hosts simultaneously
+        print('Running hosts simultaneously')
+        threads = []
+        for h in [h1, h2, h3]:
+            t = threading.Thread(target=measure_throughput_and_latency, args=(h, h4, scheme))
+            t.start()
+            threads.append(t)
 
-            print('Ping latency from %s to H4 with %s:' % (h.name, scheme))
-            ping_output = h.cmd('ping -c 4 %s' % h4.IP())
-            print(ping_output)
+        # Wait for all threads to finish
+        for t in threads:
+            t.join()
 
-        # Close TCP server on H4
-        h4.cmd('pkill iperf')
-
-    # Stop tcpdump on s1-eth1
-    s1.cmd('pkill tcpdump')
-
-    # Print throughput results in a table format
-    print('Throughput results:')
-    print('Host\tScheme\tThroughput')
-    for (host, scheme), throughput in results.items():
-        print('%s\t%s\t%s' % (host, scheme, throughput))
-
-    # ... rest of your code ...
 
     net.pingAll()
 
@@ -82,6 +67,16 @@ def run():
     CLI(net)
     s1.cmd('pkill -SIGINT tcpdump')
     net.stop()
+
+def measure_throughput_and_latency(h, h4, scheme):
+    print('Iperf throughput from %s to H4 with %s:' % (h.name, scheme))
+    iperf_output = h.cmd('iperf -c %s -t 10' % h4.IP())
+    print(iperf_output)
+
+
+    print('Ping latency from %s to H4 with %s:' % (h.name, scheme))
+    ping_output = h.cmd('ping -c 4 %s' % h4.IP())
+    print(ping_output)
 
 
 if __name__ == '__main__':
