@@ -38,6 +38,9 @@ def run():
     # List of congestion control schemes to test
     schemes = ['reno', 'cubic', 'bbr', 'vegas']
 
+    # Dictionary to store throughput results
+    results = {}
+
     for scheme in schemes:
         # Set the congestion control scheme
         for h in [h1, h2, h3, h4]:
@@ -52,6 +55,9 @@ def run():
             iperf_output = h.cmd('iperf -c %s -t 10' % h4.IP())
             print(iperf_output)
 
+            # Store throughput result
+            results[(h.name, scheme)] = iperf_output.split()[7]  # assuming the throughput is the 8th word in the output
+
             print('Ping latency from %s to H4 with %s:' % (h.name, scheme))
             ping_output = h.cmd('ping -c 4 %s' % h4.IP())
             print(ping_output)
@@ -61,6 +67,14 @@ def run():
 
     # Stop tcpdump on s1-eth1
     s1.cmd('pkill tcpdump')
+
+    # Print throughput results in a table format
+    print('Throughput results:')
+    print('Host\tScheme\tThroughput')
+    for (host, scheme), throughput in results.items():
+        print('%s\t%s\t%s' % (host, scheme, throughput))
+
+    # ... rest of your code ...
 
     net.pingAll()
 
